@@ -1,0 +1,103 @@
+# Листинг программы для одноплатного компьютера Raspberry Pi 3
+
+# -*- coding: utf-8 -*-
+
+import pygame, time, sys, os, threading
+from pygame.locals import *
+
+# local mode with test data
+local_mode = False
+
+def local_test():
+    time.sleep(0.5)
+    return "{\"lightness\": 100}"
+
+(width, height) = (640, 480)
+
+black = (0,     0,   0)
+white = (255, 255, 255)
+green = (0,   255,   0)
+
+pygame.init()
+pygame.font.init()
+
+font = pygame.font.SysFont('monospace', 30, bold=True)
+bigFont = pygame.font.SysFont('monospace', 60, bold=True)
+
+surface = pygame.display.set_mode((width, height))
+
+pygame.display.set_caption('TIR!')
+
+def setupSerial(number):
+    tty_setup = os.system('stty -F /dev/ttyACM' + str(number) + ' 9600 raw')
+    if tty_setup != 0 and not local_mode:
+        print('Is Arduino connected?')
+        exit()
+
+setupSerial(0)
+setupSerial(1)
+
+arduinoTir    = open('/dev/ttyACM0', 'r')
+arduinoPistol = open('/dev/ttyACM1', 'r')
+
+bullets = 5
+hits    = 0
+
+def text(surface, string, x, y, big=False):
+    f = bigFont if big else font
+    s = f.render(string, True, white)
+    surface.blit(s, (x, y))
+
+def checkMessageTir():
+    global hits, bullets
+
+    while True:
+        try:
+            raw = arduinoTir.readline() if not local_mode else local_test()
+            print(raw)
+            msg = eval(raw)
+            print("Msg from tir: " + str(msg))
+            for i in [0, 1, 2, 3, 4]:
+                key = "target" + str(i)
+                if key in msg:
+                    print(msg[key])
+                    hits += 1
+            if "reset" in msg:
+                hits = 0
+                bullets = 5
+        except Exception as ex:
+            print('! Error while reading:', ex)
+
+def checkMessagePistol():
+    global bullets
+
+    while True:
+        try:
+            raw = arduinoPistol.readline() if not local_mode else local_test()
+            print(raw)
+            msg = eval(raw)
+            print("Msg from pistol: " + str(msg))
+            if "shoot" in msg:
+                bullets -= 1
+        except Exception as ex:
+            print('! Error while reading:', ex)
+   
+threading.Thread(target = checkMessageTir).start()
+threading.Thread(target = checkMessagePistol).start()
+
+while True: # main game loop
+    for event in pygame.event.get():
+        if event.type == QUIT:
+            pygame.quit()
+            sys.exit()
+
+    surface.fill(black)
+
+    # pygame.draw.rect(surface, green, pygame.Rect(10, 10, value, 100))
+    text(surface, 'PLAYER   ' + str(1), 10, 10, big=True)
+    text(surface, 'Bullets: ' + str(bullets), 10, 60, big=True)
+    text(surface, 'Hits:    ' + str(hits), 10, 120, big=True)
+
+    pygame.display.update()
+
+    time.sleep(0.25)
